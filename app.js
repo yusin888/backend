@@ -9,7 +9,8 @@ app.use(cors());
 app.use(express.json());
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
-let nextId = 1; // Initialize the ID counter
+let nextCourseId = 1; // Initialize the course ID counter
+let nextCategoryId = 1; // Initialize the category ID counter
 
 // Helper function to read course data from PDF files
 function readCoursesFromDirectory(directory, category) {
@@ -20,9 +21,10 @@ function readCoursesFromDirectory(directory, category) {
     if (path.extname(file).toLowerCase() === '.pdf') {
       const stats = fs.statSync(path.join(directory, file));
       const course = {
-        id: nextId++, // Use the nextId and increment it
+        id: nextCourseId++,
         title: path.basename(file, '.pdf'),
-        category: category,
+        categoryId: category.id,
+        categoryName: category.name,
         progress: 0,
         icon: 'default-icon.png',
         color: '#' + Math.floor(Math.random()*16777215).toString(16),
@@ -30,7 +32,7 @@ function readCoursesFromDirectory(directory, category) {
         duration: `${Math.floor(stats.size / 1000)} min`,
         enrolledCount: Math.floor(Math.random() * 1000),
         rating: (Math.random() * 2 + 3).toFixed(1),
-        nextLesson: null // Initialize nextLesson as null
+        nextLesson: null
       };
       courses.push(course);
     }
@@ -39,20 +41,31 @@ function readCoursesFromDirectory(directory, category) {
   return courses;
 }
 
-// Define categories and their corresponding directories
-const categories = {
-  gynecology: path.join(__dirname, 'public/courses/Gynecology'),
-  obstetrics: path.join(__dirname, 'public/courses/Obstetrics'),
+// Define categories with IDs and their corresponding directories
+const categories = [
+  {
+    id: nextCategoryId++,
+    name: 'Gynecology',
+    path: path.join(__dirname, 'public/courses/Gynecology')
+  },
+  {
+    id: nextCategoryId++,
+    name: 'Obstetrics',
+    path: path.join(__dirname, 'public/courses/Obstetrics')
+  }
   // Add more categories here as needed
-};
+];
+
+// Create a map for easy category lookup
+const categoriesMap = new Map(categories.map(cat => [cat.id, cat]));
 
 // Read courses for each category
 const coursesByCategory = {};
 let allCourses = [];
 
-Object.entries(categories).forEach(([category, directory]) => {
-  coursesByCategory[category] = readCoursesFromDirectory(directory, category);
-  allCourses = allCourses.concat(coursesByCategory[category]);
+categories.forEach(category => {
+  coursesByCategory[category.id] = readCoursesFromDirectory(category.path, category);
+  allCourses = allCourses.concat(coursesByCategory[category.id]);
 });
 
 // Function to update nextLesson for all courses
@@ -61,7 +74,7 @@ function updateNextLessons() {
     if (index < allCourses.length - 1) {
       course.nextLesson = allCourses[index + 1].id;
     } else {
-      course.nextLesson = null; // Last course has no next lesson
+      course.nextLesson = null;
     }
   });
 }
@@ -95,29 +108,32 @@ app.post('/api/courses/:id/progress', (req, res) => {
   res.json(course);
 });
 
-// GET courses by category
-app.get('/api/courses/category/:category', (req, res) => {
-  const category = req.params.category.toLowerCase();
+// GET courses by category ID
+app.get('/api/courses/category/:categoryId', (req, res) => {
+  const categoryId = parseInt(req.params.categoryId);
   
-  if (category in coursesByCategory) {
-    res.json(coursesByCategory[category]);
+  if (coursesByCategory[categoryId]) {
+    res.json(coursesByCategory[categoryId]);
   } else {
-    return res.status(400).send('Invalid category');
+    return res.status(400).send('Invalid category ID');
   }
 });
 
 // GET available categories
 app.get('/api/categories', (req, res) => {
-  res.json(Object.keys(categories));
+  res.json(categories.map(cat => ({
+    id: cat.id,
+    name: cat.name
+  })));
 });
 
-// Serve a specific PDF course file for rendering (not downloading)
+// Serve a specific PDF course file for rendering
 app.get('/api/courses/:id/content', (req, res) => {
   const course = allCourses.find(c => c.id === parseInt(req.params.id));
   if (!course) return res.status(404).send('Course not found');
 
-  const categoryDirectory = categories[course.category];
-  const filePath = path.join(categoryDirectory, course.title + '.pdf');
+  const category = categoriesMap.get(course.categoryId);
+  const filePath = path.join(category.path, course.title + '.pdf');
 
   if (fs.existsSync(filePath)) {
     res.sendFile(filePath);
