@@ -9,149 +9,134 @@ app.use(cors());
 app.use(express.json());
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
+let nextModuleId = 1; // Initialize the module ID counter
 let nextCourseId = 1; // Initialize the course ID counter
-let nextCategoryId = 1; // Initialize the category ID counter
 
-// Helper function to read course data from PDF files
-function readCoursesFromDirectory(directory, category) {
-  const courses = [];
+// Helper function to read module data from PDF files
+function readModulesFromDirectory(directory, course) {
+  const modules = [];
   const files = fs.readdirSync(directory);
   
   files.forEach((file) => {
     if (path.extname(file).toLowerCase() === '.pdf') {
       const stats = fs.statSync(path.join(directory, file));
-      const course = {
-        id: nextCourseId++,
+      const module = {
+        id: nextModuleId++,
         title: path.basename(file, '.pdf'),
-        categoryId: category.id,
-        categoryName: category.name,
+        courseId: course.id,
+        courseName: course.name,
         progress: 0,
-        icon: 'default-icon.png',
-        color: '#' + Math.floor(Math.random()*16777215).toString(16),
-        bgColor: '#' + Math.floor(Math.random()*16777215).toString(16),
         duration: `${Math.floor(stats.size / 1000)} min`,
-        enrolledCount: Math.floor(Math.random() * 1000),
-        rating: (Math.random() * 2 + 3).toFixed(1),
-        nextLesson: null
+        completed: false,
+        type: ['video', 'reading', 'quiz'][Math.floor(Math.random() * 3)],
+        description: `Description for ${path.basename(file, '.pdf')}`
       };
-      courses.push(course);
+      modules.push(module);
     }
   });
   
-  return courses;
+  return modules;
 }
 
-// Define categories with IDs and their corresponding directories
-const categories = [
+// Define courses with IDs and their corresponding directories
+const courses = [
   {
-    id: nextCategoryId++,
+    id: nextCourseId++,
     name: 'Gynecology',
     path: path.join(__dirname, 'public/courses/Gynecology')
   },
   {
-    id: nextCategoryId++,
+    id: nextCourseId++,
     name: 'Obstetrics',
     path: path.join(__dirname, 'public/courses/Obstetrics')
+  },
+  {
+    id: nextCourseId++,
+    name: 'Orthopedic Study',
+    path: path.join(__dirname, 'public/courses/Orthopedic Study Resources')
+  },
+  {
+    id: nextCourseId++,
+    name: 'Emergencies In Medicine',
+    path: path.join(__dirname, 'public/courses/Emergencies In Medicine')
+  },
+  {
+    id: nextCourseId++,
+    name: 'Surgery Study',
+    path: path.join(__dirname, 'public/courses/Surgery Study Resources')
   }
-  // Add more categories here as needed
 ];
 
-// Create a map for easy category lookup
-const categoriesMap = new Map(categories.map(cat => [cat.id, cat]));
+// Create a map for easy course lookup
+const coursesMap = new Map(courses.map(course => [course.id, course]));
 
-// Read courses for each category
-const coursesByCategory = {};
-let allCourses = [];
+// Read modules for each course
+const modulesByCourse = {};
+let allModules = [];
 
-categories.forEach(category => {
-  coursesByCategory[category.id] = readCoursesFromDirectory(category.path, category);
-  allCourses = allCourses.concat(coursesByCategory[category.id]);
+courses.forEach(course => {
+  modulesByCourse[course.id] = readModulesFromDirectory(course.path, course);
+  allModules = allModules.concat(modulesByCourse[course.id]);
 });
 
-// Function to update nextLesson for all courses
-function updateNextLessons() {
-  allCourses.forEach((course, index) => {
-    if (index < allCourses.length - 1) {
-      course.nextLesson = allCourses[index + 1].id;
-    } else {
-      course.nextLesson = null;
-    }
-  });
-}
-
-// Call updateNextLessons after all courses are loaded
-updateNextLessons();
-
-// GET all courses
-app.get('/api/courses', (req, res) => {
-  res.json(allCourses);
+// GET all modules
+app.get('/api/modules', (req, res) => {
+  res.json(allModules);
 });
 
-// GET a specific course by ID
-app.get('/api/courses/:id', (req, res) => {
-  const course = allCourses.find(c => c.id === parseInt(req.params.id));
-  if (!course) return res.status(404).send('Course not found');
-  res.json(course);
+// GET a specific module by ID
+app.get('/api/modules/:id', (req, res) => {
+  const module = allModules.find(m => m.id === parseInt(req.params.id));
+  if (!module) return res.status(404).send('Module not found');
+  res.json(module);
 });
 
-// POST to update course progress
-app.post('/api/courses/:id/progress', (req, res) => {
-  const course = allCourses.find(c => c.id === parseInt(req.params.id));
-  if (!course) return res.status(404).send('Course not found');
+// POST to update module progress
+app.post('/api/modules/:id/progress', (req, res) => {
+  const module = allModules.find(m => m.id === parseInt(req.params.id));
+  if (!module) return res.status(404).send('Module not found');
   
   const { progress } = req.body;
   if (progress === undefined || progress < 0 || progress > 100) {
     return res.status(400).send('Invalid progress value');
   }
   
-  course.progress = progress;
-  res.json(course);
+  module.progress = progress;
+  module.completed = progress === 100;
+  res.json(module);
 });
 
-// GET courses by category ID
-app.get('/api/courses/category/:categoryId', (req, res) => {
-  const categoryId = parseInt(req.params.categoryId);
+// GET modules by course ID
+app.get('/api/modules/course/:courseId', (req, res) => {
+  const courseId = parseInt(req.params.courseId);
   
-  if (coursesByCategory[categoryId]) {
-    res.json(coursesByCategory[categoryId]);
+  if (modulesByCourse[courseId]) {
+    res.json(modulesByCourse[courseId]);
   } else {
-    return res.status(400).send('Invalid category ID');
+    return res.status(400).send('Invalid course ID');
   }
 });
 
-// GET available categories
-app.get('/api/categories', (req, res) => {
-  res.json(categories.map(cat => ({
-    id: cat.id,
-    name: cat.name
+// GET available courses
+app.get('/api/courses', (req, res) => {
+  res.json(courses.map(course => ({
+    id: course.id,
+    name: course.name
   })));
 });
 
-// Serve a specific PDF course file for rendering
-app.get('/api/courses/:id/content', (req, res) => {
-  const course = allCourses.find(c => c.id === parseInt(req.params.id));
-  if (!course) return res.status(404).send('Course not found');
+// Serve a specific PDF module file for rendering
+app.get('/api/modules/:id/content', (req, res) => {
+  const module = allModules.find(m => m.id === parseInt(req.params.id));
+  if (!module) return res.status(404).send('Module not found');
 
-  const category = categoriesMap.get(course.categoryId);
-  const filePath = path.join(category.path, course.title + '.pdf');
+  const course = coursesMap.get(module.courseId);
+  const filePath = path.join(course.path, module.title + '.pdf');
 
   if (fs.existsSync(filePath)) {
     res.sendFile(filePath);
   } else {
     res.status(404).send('PDF file not found');
-  }
-});
-
-// GET the next lesson for a given course
-app.get('/api/courses/:id/next', (req, res) => {
-  const course = allCourses.find(c => c.id === parseInt(req.params.id));
-  if (!course) return res.status(404).send('Course not found');
-  
-  if (course.nextLesson) {
-    const nextCourse = allCourses.find(c => c.id === course.nextLesson);
-    res.json(nextCourse);
-  } else {
-    res.status(404).send('No next lesson available');
   }
 });
 
